@@ -5,10 +5,10 @@
     <!-- 查找模块 -->
     <el-form :inline="true" :model="queryInfo" class="demo-form-inline" size="mini">
       <el-form-item label="学号">
-        <el-input v-model="queryInfo.snumber" placeholder="精确查找"></el-input>
+        <el-input v-model.trim="queryInfo.snumber" placeholder="精确查找"></el-input>
       </el-form-item>
       <el-form-item label="姓名">
-        <el-input v-model="queryInfo.name" placeholder="模糊查找"></el-input>
+        <el-input v-model.trim="queryInfo.name" placeholder="模糊查找"></el-input>
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="queryStudentInfo">查询</el-button>
@@ -29,8 +29,8 @@
         <el-table-column prop="dblan" label="数据库"> </el-table-column>
         <el-table-column label="操作">
           <template slot-scope="scope">
-            <el-button @click="handleClick(scope.row)" type="primary" size="small">查看</el-button>
-            <el-button type="danger" size="small">编辑</el-button>
+            <el-button @click="editStudentDialog(scope.row)" type="primary" size="small">编辑</el-button>
+            <el-button type="danger" size="small" @click="deleteStudent(scope.row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -42,11 +42,12 @@
           :page-size="page.pageSize"
           :current-page="page.currentPage"
           :total="total"
+          v-show="show"
         ></el-pagination>
       </div>
     </el-main>
     <!-- 录入对话框 -->
-    <el-dialog title="提示" :visible.sync="dialogVisible" width="40%" @close="addStudentClose">
+    <el-dialog title="录入信息" :visible.sync="dialogVisible" width="40%" @close="addStudentClose">
       <el-form :inline="true" :model="addStudent" class="demo-form-inline" :rules="addStudentRules" ref="addStudentRef">
         <el-divider content-position="left">基本信息</el-divider>
         <el-form-item label="学号" prop="snumber">
@@ -80,12 +81,55 @@
         <el-button type="primary" @click="addStudentInfo" size="mini">确 定</el-button>
       </span>
     </el-dialog>
+    <!-- 修改对话框 -->
+    <el-dialog title="修改信息" :visible.sync="editDialogVisible" width="40%" @close="editStudentClose">
+      <el-form
+        :inline="true"
+        :model="editStudent"
+        class="demo-form-inline"
+        :rules="addStudentRules"
+        ref="editStudentRef"
+      >
+        <el-divider content-position="left">基本信息</el-divider>
+        <el-form-item label="学号" prop="snumber">
+          <el-input v-model="editStudent.snumber" placeholder="T2018xxxx" size="mini" style="width:200px"></el-input>
+        </el-form-item>
+        <el-form-item label="班级" prop="class">
+          <el-input v-model="editStudent.class" placeholder="18软件xx" size="mini" style="width:200px"></el-input>
+        </el-form-item>
+        <el-form-item label="姓名" prop="name">
+          <el-input v-model="editStudent.name" placeholder="张三" size="mini" style="width:200px"></el-input>
+        </el-form-item>
+        <el-form-item label="性别" prop="resource">
+          <el-radio-group v-model="editStudent.sex" style="width:200px;text-align:left;">
+            <el-radio label="男" checked></el-radio>
+            <el-radio label="女"></el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-divider content-position="left">各科成绩</el-divider>
+        <el-form-item label="css" prop="clan">
+          <el-input v-model.number="editStudent.clan" placeholder="0-100" size="mini" style="width:120px"></el-input>
+        </el-form-item>
+        <el-form-item label="JS" prop="jslan">
+          <el-input v-model.number="editStudent.jslan" placeholder="0-100" size="mini" style="width:120px"></el-input>
+        </el-form-item>
+        <el-form-item label="数据库" prop="dblan">
+          <el-input v-model.number="editStudent.dblan" placeholder="0-100" size="mini" style="width:120px"></el-input>
+        </el-form-item>
+      </el-form>
+
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="editDialogVisible = false" size="mini">取 消</el-button>
+        <el-button type="primary" @click="editStudentInfo(id)" size="mini">确 定</el-button>
+      </span>
+    </el-dialog>
   </el-container>
 </template>
 
 <script>
 export default {
   name: 'app',
+
   data() {
     const lengthRelus = { min: 2, max: 20, message: '长度在 2 到 20 个字符', trigger: 'blur' }
     var checkScore = (rule, value, callback) => {
@@ -134,13 +178,22 @@ export default {
         clan: [{ validator: checkScore, trigger: 'blur' }],
         jslan: [{ validator: checkScore, trigger: 'blur' }],
         dblan: [{ validator: checkScore, trigger: 'blur' }]
-      }
+      },
+      // 分页的显示与隐藏
+      show: true,
+      // 修改对话框的显示与隐藏
+      editDialogVisible: false,
+      // 要修改的学生信息
+      editStudent: {},
+      // 要修改的id值
+      id: ''
     }
   },
+
   methods: {
     // 获取学生数据
     async getStudentList() {
-      const { data } = await this.$axios.get('/studentList', { params: this.page })
+      const { data } = await this.$axios.get('/studentList', { params: { ...this.page, name: this.queryInfo.name } })
       this.studentList = data.data
       this.total = data.total
     },
@@ -153,16 +206,30 @@ export default {
     },
     // 查询学生信息
     async queryStudentInfo() {
-      const { snumber } = this.queryInfo
+      const { snumber, name } = this.queryInfo
       if (snumber.length > 1 && snumber.length < 20) {
         const { data } = await this.$axios.get('/findBySnumber/' + snumber)
-        console.log(data)
         this.studentList = data
+        this.show = false
+        return this.message('查找数据成功', 'success')
       }
+      if (name.length > 1 && name.length < 20) {
+        // const { data } = await this.$axios.get('/studentList', {
+        //   params: {
+        //     name,
+        //     ...this.page
+        //   }
+        // })
+        // this.studentList = data.data
+        // this.total = data.total
+        // return this.message('查找数据成功', 'success')
+        return this.getStudentList()
+      }
+      this.show = true
+      return this.getStudentList()
     },
     // 录入学生信息
     addStudentInfo() {
-      this.dialogVisible = true
       this.$refs.addStudentRef.validate(async (valid) => {
         if (!valid) return this.message('表单验证不通过', 'error')
         const data = await this.$axios.post('/students', this.addStudent)
@@ -172,16 +239,52 @@ export default {
         this.dialogVisible = false
       })
     },
-    handleClick(row) {
-      console.log(row)
+    // 弹出修改dialog对话框
+    editStudentDialog(row) {
+      // console.log(row)
+      this.editDialogVisible = true
+      this.editStudent = row
+      this.id = row._id
     },
-    // 关闭对话框清空验证与表单数据
+    // 关闭录入对话框清空验证与表单数据
     addStudentClose() {
       this.$refs.addStudentRef.resetFields()
     },
+    // 关闭修改对话框清空验证与表单数据
+    editStudentClose() {
+      this.$refs.editStudentRef.resetFields()
+    },
+    // 当前页发生变化触发
     currentChange(page) {
       this.page.currentPage = page
       this.getStudentList()
+    },
+    // 点击确定, 发起修改信息
+    editStudentInfo(id) {
+      console.log(id)
+      this.$refs.editStudentRef.validate(async (valid) => {
+        if (!valid) return this.message('表单验证不通过', 'error')
+        const data = await this.$axios.put('/confirmUpdate/' + id, this.editStudent)
+        if (data.status !== 200) this.message(data.data, 'error')
+        this.message('修改信息成功', 'success')
+        this.getStudentList()
+        this.editDialogVisible = false
+      })
+    },
+    // 删除学生信息
+    async deleteStudent(row) {
+      console.log(row)
+      const result = await this.$confirm('此操作将永久删除该信息, 是否继续?', '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).catch((e) => e)
+      if (result !== 'confirm') return this.message('取消了删除', 'info')
+      const { data } = await this.$axios.delete('/students/' + row._id)
+      if (data.Student) {
+        this.message('删除信息成功', 'success')
+        this.getStudentList()
+      }
     }
   },
   created() {
@@ -190,24 +293,4 @@ export default {
 }
 </script>
 
-<style>
-.el-header,
-.el-footer {
-  background-color: #b3c0d1;
-  color: #333;
-  text-align: center;
-  line-height: 60px;
-  margin-bottom: 10px;
-}
-
-/* .el-main {
-  background-color: #e9eef3;
-  color: #333;
-  text-align: center;
-  line-height: 160px;
-} */
-.el-form {
-  text-align: center;
-  justify-content: center;
-}
-</style>
+<style></style>
